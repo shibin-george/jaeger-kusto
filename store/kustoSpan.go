@@ -1,6 +1,8 @@
 package store
 
 import (
+	"fmt"
+
 	"encoding/json"
 	"strconv"
 	"time"
@@ -31,12 +33,15 @@ const (
 )
 
 func transformKustoSpanToModelSpan(kustoSpan *kustoSpan) (*model.Span, error) {
+	fmt.Printf("getting row 3 %s!!!!\n", kustoSpan.TraceID)
 
-	var refs []dbmodel.Reference
+	/*var refs []dbmodel.Reference
 	err := json.Unmarshal(kustoSpan.References.Value, &refs)
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Printf("getting row 4!!!!\n")
 
 	var tags map[string]interface{}
 	err = json.Unmarshal(kustoSpan.Tags.Value, &tags)
@@ -44,11 +49,15 @@ func transformKustoSpanToModelSpan(kustoSpan *kustoSpan) (*model.Span, error) {
 		return nil, err
 	}
 
+	fmt.Printf("getting row 5!!!!\n")
+
 	var logs []dbmodel.Log
 	err = json.Unmarshal(kustoSpan.Logs.Value, &logs)
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Printf("getting row 6!!!!\n")
 
 	process := dbmodel.Process{
 		ServiceName: kustoSpan.ProcessServiceName,
@@ -59,21 +68,21 @@ func transformKustoSpanToModelSpan(kustoSpan *kustoSpan) (*model.Span, error) {
 	err = json.Unmarshal(kustoSpan.ProcessTags.Value, &process.Tag)
 	if err != nil {
 		return nil, err
-	}
+	}*/
 
 	jsonSpan := &dbmodel.Span{
 		TraceID:         dbmodel.TraceID(kustoSpan.TraceID),
 		SpanID:          dbmodel.SpanID(kustoSpan.SpanID),
 		Flags:           uint32(kustoSpan.Flags),
 		OperationName:   "",
-		References:      refs,
+		References:      nil,
 		StartTime:       0,
 		StartTimeMillis: 0,
 		Duration:        0,
 		Tags:            nil,
-		Tag:             tags,
-		Logs:            logs,
-		Process:         process,
+		Tag:             nil,
+		Logs:            nil,
+		Process:         dbmodel.Process{},
 	}
 
 	spanConverter := dbmodel.NewToDomain(TagDotReplacementCharacter)

@@ -45,13 +45,14 @@ var safetySwitch = unsafe.Stmt{
 
 // GetTrace finds trace by TraceID
 func (r *kustoSpanReader) GetTrace(ctx context.Context, traceID model.TraceID) (*model.Trace, error) {
-	kustoStmt := kusto.NewStmt("Spans | where TraceID == ParamTraceID").MustDefinitions(
+	kustoStmt := kusto.NewStmt("traces | where TraceID == ParamTraceID").MustDefinitions(
 		kusto.NewDefinitions().Must(
 			kusto.ParamTypes{
 				"ParamTraceID": kusto.ParamType{Type: types.String},
 			},
 		)).MustParameters(kusto.NewParameters().Must(kusto.QueryValues{"ParamTraceID": traceID.String()}))
 
+	fmt.Printf("getting query ready!!!!\n")
 	iter, err := r.client.Query(ctx, r.database, kustoStmt)
 	if err != nil {
 		return nil, err
@@ -61,10 +62,13 @@ func (r *kustoSpanReader) GetTrace(ctx context.Context, traceID model.TraceID) (
 	var spans []*model.Span
 	err = iter.Do(
 		func(row *table.Row) error {
+			fmt.Printf("getting row!!!!\n")
 			rec := kustoSpan{}
 			if err := row.ToStruct(&rec); err != nil {
 				return err
 			}
+
+			fmt.Printf("getting row 2!!!!\n")
 			var span *model.Span
 			span, err = transformKustoSpanToModelSpan(&rec)
 			if err != nil {
@@ -119,7 +123,7 @@ func (r *kustoSpanReader) GetOperations(ctx context.Context, query spanstore.Ope
 
 	var kustoStmt kusto.Stmt
 	if query.ServiceName == "" && query.SpanKind == "" {
-		kustoStmt = kusto.NewStmt(`Spans
+		kustoStmt = kusto.NewStmt(`traces
 | summarize count() by OperationName
 | sort by count_
 | project-away count_`)
