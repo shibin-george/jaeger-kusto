@@ -7,24 +7,36 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dodopizza/jaeger-kusto/store/utils"
+
 	"github.com/Azure/azure-kusto-go/kusto/data/value"
 	"github.com/jaegertracing/jaeger/model"
 	"github.com/jaegertracing/jaeger/plugin/storage/es/spanstore/dbmodel"
+
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
 type kustoSpan struct {
 	TraceID            string        `kusto:"TraceID"`
 	SpanID             string        `kusto:"SpanID"`
-	OperationName      string        `kusto:"OperationName"`
-	References         value.Dynamic `kusto:"References"`
-	Flags              int32         `kusto:"Flags"`
+	ParentID           string        `kusto:"ParentID"`
+	SpanName           string        `kusto:"SpanName"`
+	SpanStatus         string        `kusto:"SpanStatus"`
+	SpanKind           string        `kusto:"SpanKind"`
 	StartTime          time.Time     `kusto:"StartTime"`
-	Duration           time.Duration `kusto:"Duration"`
-	Tags               value.Dynamic `kusto:"Tags"`
-	Logs               value.Dynamic `kusto:"Logs"`
-	ProcessServiceName string        `kusto:"ProcessServiceName"`
-	ProcessTags        value.Dynamic `kusto:"ProcessTags"`
-	ProcessID          string        `kusto:"ProcessID"`
+	EndTime            time.Time     `kusto:"EndTime"`
+	ResourceAttributes value.Dynamic `kusto:"ResourceAttributes"`
+	TraceAttributes    value.Dynamic `kusto:"TraceAttributes"`
+	Events             value.Dynamic `kusto:"Events"`
+	Links              value.Dynamic `kusto:"Links"`
+}
+
+type Link struct {
+	TraceID            string
+	SpanID             string
+	TraceState         string
+	SpanLinkAttributes map[string]any
 }
 
 const (
@@ -35,64 +47,22 @@ const (
 func transformKustoSpanToModelSpan(kustoSpan *kustoSpan) (*model.Span, error) {
 	fmt.Printf("getting row 3 %s!!!!\n", kustoSpan.TraceID)
 
-	/*var refs []dbmodel.Reference
-	err := json.Unmarshal(kustoSpan.References.Value, &refs)
+	/*internalResource, internalSpan, err := kustoSpanToOtelInternalSpan(kustoSpan)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Printf("getting row 4!!!!\n")
+	batches, err := jaeger.
 
-	var tags map[string]interface{}
-	err = json.Unmarshal(kustoSpan.Tags.Value, &tags)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Printf("getting row 5!!!!\n")
-
-	var logs []dbmodel.Log
-	err = json.Unmarshal(kustoSpan.Logs.Value, &logs)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Printf("getting row 6!!!!\n")
-
-	process := dbmodel.Process{
-		ServiceName: kustoSpan.ProcessServiceName,
-		Tags:        nil,
-		Tag:         nil,
-	}
-
-	err = json.Unmarshal(kustoSpan.ProcessTags.Value, &process.Tag)
-	if err != nil {
-		return nil, err
-	}*/
-
-	jsonSpan := &dbmodel.Span{
-		TraceID:         dbmodel.TraceID(kustoSpan.TraceID),
-		SpanID:          dbmodel.SpanID(kustoSpan.SpanID),
-		Flags:           uint32(kustoSpan.Flags),
-		OperationName:   "",
-		References:      nil,
-		StartTime:       0,
-		StartTimeMillis: 0,
-		Duration:        0,
-		Tags:            nil,
-		Tag:             nil,
-		Logs:            nil,
-		Process:         dbmodel.Process{},
-	}
 
 	spanConverter := dbmodel.NewToDomain(TagDotReplacementCharacter)
 	convertedSpan, err := spanConverter.SpanToDomain(jsonSpan)
 	if err != nil {
 		return nil, err
-	}
+	}*/
 
 	span := &model.Span{
-		TraceID:       convertedSpan.TraceID,
+		/*TraceID:       convertedSpan.TraceID,
 		SpanID:        convertedSpan.SpanID,
 		OperationName: kustoSpan.OperationName,
 		References:    convertedSpan.References,
@@ -101,10 +71,10 @@ func transformKustoSpanToModelSpan(kustoSpan *kustoSpan) (*model.Span, error) {
 		Duration:      kustoSpan.Duration,
 		Tags:          convertedSpan.Tags,
 		Logs:          convertedSpan.Logs,
-		Process:       convertedSpan.Process,
+		Process:       convertedSpan.Process,*/
 	}
 
-	return span, err
+	return span, nil
 }
 
 func getTagsValues(tags []model.KeyValue) []string {
@@ -154,4 +124,116 @@ func TransformSpanToStringArray(span *model.Span) ([]string, error) {
 	}
 
 	return kustoStringSpan, err
+}
+
+func kustoSpanToOtelInternalSpan(kustoSpan *kustoSpan) (pcommon.Resource, ptrace.Span, error) {
+	var err error
+
+	internalResource := pcommon.NewResource()
+	internalSpan := ptrace.NewSpan()
+
+	var traceId model.TraceID
+	var spanId model.SpanID
+	var parentSpanId model.SpanID
+
+	// convert kusto trace-id to jaeger trace-id to pcommon.TraceID
+	if traceId, err = model.TraceIDFromString(kustoSpan.TraceID); err != nil {
+		return internalResource, internalSpan, err
+	}
+
+	if spanId, err = model.SpanIDFromString(kustoSpan.SpanID); err != nil {
+		return internalResource, internalSpan, err
+	}
+
+	if parentSpanId, err = model.SpanIDFromString(kustoSpan.ParentID); err != nil {
+		return internalResource, internalSpan, err
+	}
+
+	var traceAttributes map[string]interface{}
+	if err = json.Unmarshal(kustoSpan.TraceAttributes.Value, &traceAttributes); err != nil {
+		return internalResource, internalSpan, err
+	}
+
+	var links []Link
+	if err = json.Unmarshal(kustoSpan.Links.Value, &links); err != nil {
+		return internalResource, internalSpan, err
+	}
+
+	internalSpan.SetTraceID(utils.UInt64ToTraceID(traceId.High, traceId.Low))
+	internalSpan.SetSpanID(utils.UInt64ToSpanID(uint64(spanId)))
+	internalSpan.SetParentSpanID(utils.UInt64ToSpanID(uint64(parentSpanId)))
+	internalSpan.SetName(kustoSpan.SpanName)
+	internalSpan.SetKind(SpanKindFromStr(kustoSpan.SpanKind))
+	internalSpan.SetStartTimestamp(pcommon.NewTimestampFromTime(kustoSpan.StartTime))
+	internalSpan.SetEndTimestamp(pcommon.NewTimestampFromTime(kustoSpan.EndTime))
+	internalSpan.Attributes().FromRaw(traceAttributes)
+	getLinks(links, &internalSpan)
+
+	var resourceAttributes map[string]interface{}
+	if err = json.Unmarshal(kustoSpan.ResourceAttributes.Value, &resourceAttributes); err != nil {
+		return internalResource, internalSpan, err
+	}
+
+	internalResource.Attributes().FromRaw(resourceAttributes)
+
+	return internalResource, internalSpan, nil
+}
+
+func SpanKindFromStr(sk string) ptrace.SpanKind {
+	switch sk {
+	case "SPAN_KIND_INTERNAL":
+		return ptrace.SpanKindInternal
+	case "SPAN_KIND_SERVER":
+		return ptrace.SpanKindServer
+	case "SPAN_KIND_CLIENT":
+		return ptrace.SpanKindClient
+	case "SPAN_KIND_PRODUCER":
+		return ptrace.SpanKindProducer
+	case "SPAN_KIND_CONSUMER":
+		return ptrace.SpanKindConsumer
+	}
+
+	return ptrace.SpanKindUnspecified
+}
+
+func getLinks(links []Link, span *ptrace.Span) {
+	linkSplice := ptrace.NewSpanLinkSlice()
+	linkSplice.EnsureCapacity(len(links))
+
+	for i := 0; i < len(links); i++ {
+		link := linkSplice.AppendEmpty()
+
+		var traceId model.TraceID
+		var spanId model.SpanID
+		var err error
+
+		// convert kusto trace-id to jaeger trace-id to pcommon.TraceID
+		if traceId, err = model.TraceIDFromString(links[i].TraceID); err != nil {
+			return
+		}
+
+		if spanId, err = model.SpanIDFromString(links[i].SpanID); err != nil {
+			return
+		}
+
+		link.SetTraceID(utils.UInt64ToTraceID(traceId.High, traceId.Low))
+		link.SetSpanID(utils.UInt64ToSpanID(uint64(spanId)))
+
+		attrs := link.Attributes()
+		attrs.FromRaw(links[i].SpanLinkAttributes)
+		link.TraceState().FromRaw(getTraceStateFromAttrs(attrs))
+	}
+
+	linkSplice.CopyTo(span.Links())
+}
+
+func getTraceStateFromAttrs(attrs pcommon.Map) string {
+	traceState := ""
+	traceStateKey := "w3c.tracestate"
+	// TODO Bring this inline with solution for jaegertracing/jaeger-client-java #702 once available
+	if attr, ok := attrs.Get(traceStateKey); ok {
+		traceState = attr.Str()
+		attrs.Remove(traceStateKey)
+	}
+	return traceState
 }

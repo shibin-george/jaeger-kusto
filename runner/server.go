@@ -2,10 +2,6 @@ package runner
 
 import (
 	"fmt"
-	"github.com/dodopizza/jaeger-kusto/config"
-	"github.com/hashicorp/go-hclog"
-	"github.com/jaegertracing/jaeger/plugin/storage/grpc/shared"
-	"google.golang.org/grpc"
 	"io"
 	"net"
 	"net/url"
@@ -14,23 +10,23 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	"github.com/dodopizza/jaeger-kusto/config"
+	"github.com/hashicorp/go-hclog"
+	"github.com/jaegertracing/jaeger/plugin/storage/grpc/shared"
+	"github.com/jaegertracing/jaeger/storage/dependencystore"
+	"github.com/jaegertracing/jaeger/storage/spanstore"
+	"google.golang.org/grpc"
 )
 
 func serveServer(c *config.PluginConfig, store shared.StoragePlugin, logger hclog.Logger) error {
-	plugin := shared.StorageGRPCPlugin{
-		Impl: store,
-	}
 
-	tracer, closer, err := config.NewPluginTracer(c)
+	handler, err := createGRPCHandler(store)
 	if err != nil {
 		return err
 	}
-	defer closer.Close()
 
-	server := newGRPCServerWithTracer(tracer)
-	if err := plugin.GRPCServer(nil, server); err != nil {
-		return err
-	}
+	server := newGRPCServerWithTracer(handler)
 
 	scheme, address, err := parseListenAddress(c.RemoteListenAddress)
 	if err != nil {
@@ -91,4 +87,18 @@ func parseListenAddress(addr string) (scheme, address string, err error) {
 	proto := fmt.Sprintf("%s://", u.Scheme)
 
 	return u.Scheme, strings.Replace(addr, proto, "", 1), nil
+}
+
+func createGRPCHandler(store shared.StoragePlugin) (*shared.GRPCHandler, error) {
+	impl := &shared.GRPCHandlerStorageImpl{
+		SpanReader:          func() spanstore.Reader { return store.SpanReader() },
+		SpanWriter:          func() spanstore.Writer { return store.SpanWriter() },
+		DependencyReader:    func() dependencystore.Reader { return store.DependencyReader() },
+		StreamingSpanWriter: func() spanstore.Writer { return nil },
+		ArchiveSpanReader:   func() spanstore.Reader { return nil },
+		ArchiveSpanWriter:   func() spanstore.Writer { return nil },
+	}
+
+	handler := shared.NewGRPCHandler(impl)
+	return handler, nil
 }

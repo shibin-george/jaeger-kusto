@@ -5,10 +5,11 @@ package test
 
 import (
 	"context"
-	"github.com/dodopizza/jaeger-kusto/config"
-	"github.com/dodopizza/jaeger-kusto/store"
 	"testing"
 	"time"
+
+	"github.com/dodopizza/jaeger-kusto/config"
+	"github.com/dodopizza/jaeger-kusto/store"
 
 	"github.com/stretchr/testify/assert"
 

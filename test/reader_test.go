@@ -6,10 +6,11 @@ package test
 import (
 	"context"
 	"fmt"
-	"github.com/dodopizza/jaeger-kusto/config"
-	"github.com/dodopizza/jaeger-kusto/store"
 	"testing"
 	"time"
+
+	"github.com/dodopizza/jaeger-kusto/config"
+	"github.com/dodopizza/jaeger-kusto/store"
 
 	"github.com/jaegertracing/jaeger/model"
 	"github.com/jaegertracing/jaeger/storage/spanstore"
